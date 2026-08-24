@@ -49,6 +49,19 @@ class NFCGateClientHandler(socketserver.StreamRequestHandler):
         self.write_lock = threading.Lock()
         self.state = {}
         self.request.settimeout(300)
+
+        # Disable Nagle's algorithm. The relay exchanges tiny length-prefixed
+        # frames in lock-step and StreamRequestHandler's wfile is unbuffered
+        # (wbufsize=0), so with Nagle on the payload segment could wait for the
+        # delayed-ACK timer (~40 ms) on every relay hop. TCP_NODELAY sends each
+        # segment immediately; combined with the coalesced write in
+        # send_to_clients this removes the stall.
+        try:
+            self.request.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        except OSError:
+            # non-TCP transport, nothing to tune
+            pass
+
         self.log("server", "connected")
 
     def handle(self):
@@ -65,7 +78,11 @@ class NFCGateClientHandler(socketserver.StreamRequestHandler):
 
             msg_len, session = struct.unpack("!IB", msg_len_data)
             data = self.rfile.read(msg_len)
-            self.log("server", "data:", bytes(data))
+            # per-frame hex dump is a hot-path cost: it runs synchronously
+            # between reading a frame and forwarding it, so it is gated behind
+            # --verbose to keep the default relay path fast
+            if self.server.verbose:
+                self.log("server", "data:", bytes(data))
 
             # no data was sent or no session number supplied and none set yet
             if msg_len == 0 or session == 0 and self.session is None:
@@ -90,10 +107,14 @@ class NFCGateClientHandler(socketserver.StreamRequestHandler):
 
 
 class NFCGateServer(socketserver.ThreadingTCPServer):
-    def __init__(self, server_address, request_handler, plugins, tls_options=None, bind_and_activate=True):
+    def __init__(self, server_address, request_handler, plugins, tls_options=None, bind_and_activate=True,
+                 verbose=False):
         self.allow_reuse_address = True
         super().__init__(server_address, request_handler, bind_and_activate)
 
+        # when False (default), per-frame hot-path logs are skipped so the
+        # relay stays quiet and fast; --verbose turns them back on
+        self.verbose = verbose
         self.clients = {}
         self.plugins = PluginHandler(plugins)
 
@@ -146,15 +167,20 @@ class NFCGateServer(socketserver.ThreadingTCPServer):
 
             with client.write_lock:
                 for msg in msgs:
-                    client.wfile.write(int.to_bytes(len(msg), 4, byteorder='big'))
-                    client.wfile.write(msg)
+                    # single coalesced write so the length header and payload
+                    # leave as one TCP segment (see TCP_NODELAY note in setup)
+                    client.wfile.write(int.to_bytes(len(msg), 4, byteorder='big') + bytes(msg))
 
-        self.log("Publish reached", len(self.clients[session]) - 1, "clients")
+        if self.verbose:
+            self.log("Publish reached", len(self.clients[session]) - 1, "clients")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(prog="NFCGate server")
     parser.add_argument("plugins", type=str, nargs="*", help="List of plugin modules to load.")
+    parser.add_argument("-v", "--verbose", help="Log every relayed frame (per-frame hex dump and "
+                        "'Publish reached'). Off by default: those logs are on the relay hot path.",
+                        default=False, action="store_true")
     parser.add_argument("-s", "--tls", help="Enable TLS. You must specify certificate and key.",
                         default=False, action="store_true")
     parser.add_argument("--tls_cert", help="TLS certificate file in PEM format.", action="store")
@@ -179,12 +205,13 @@ def parse_args():
         except ssl.SSLError:
             print("Certificate or key could not be loaded. Please check format and file permissions!")
             sys.exit(1)
-    return args.plugins, tls_options
+    return args.plugins, tls_options, args.verbose
 
 
 def main():
-    plugins, tls_options = parse_args()
-    NFCGateServer((HOST, PORT), NFCGateClientHandler, plugins, tls_options).serve_forever()
+    plugins, tls_options, verbose = parse_args()
+    NFCGateServer((HOST, PORT), NFCGateClientHandler, plugins, tls_options,
+                  verbose=verbose).serve_forever()
 
 
 if __name__ == "__main__":
