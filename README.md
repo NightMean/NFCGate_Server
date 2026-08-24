@@ -4,6 +4,8 @@ This is the NFCGate server application using Python 3 and the Google [Protobuf](
 To run, simply start the server using `python server.py`. You can then connect to the server using the IP address of your device and the default port of 5566.  
 The server features a plugin system for data filtering. When starting the server, you can specify a list of plugins to be loaded as parameters, e.g. `python server.py log`. For an example, see the shipped `mod_log.py` plugin.
 
+The listen address and port can be overridden with the `HOST` and `PORT` environment variables (defaults: `0.0.0.0` / `5566`).
+
 ## Latency
 
 The relay is latency-sensitive. The server disables Nagle's algorithm (`TCP_NODELAY`) on client connections and writes each length-prefixed frame as a single TCP segment, avoiding delayed-ACK stalls between frames. Per-frame logging is disabled by default because it sits on the relay hot path; pass `-v`/`--verbose` to re-enable it for diagnostics.

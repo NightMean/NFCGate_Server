@@ -6,6 +6,11 @@ services:
     restart: unless-stopped
     ports:
       - "5566:5566"
+    # listening address/port inside the container; if you change PORT,
+    # update the ports mapping above accordingly
+    environment:
+      HOST: 0.0.0.0
+      PORT: 5566
     # Load the shipped log plugin by default; add or remove plugin names here,
     # e.g. command: ["log"] or enable TLS with cert/key files mounted below.
     command: ["log"]

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import os
 import socket
 import socketserver
 import ssl
@@ -8,8 +9,9 @@ import datetime
 import sys
 import threading
 
-HOST = "0.0.0.0"
-PORT = 5566
+# overridable via environment for container deployments
+HOST = os.environ.get("HOST", "0.0.0.0")
+PORT = int(os.environ.get("PORT", "5566"))
 
 
 class PluginHandler:
