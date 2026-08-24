@@ -1,0 +1,15 @@
+services:
+  nfcgate-server:
+    build: .
+    image: nfcgate-server
+    container_name: nfcgate-server
+    restart: unless-stopped
+    ports:
+      - "5566:5566"
+    # Load the shipped log plugin by default; add or remove plugin names here,
+    # e.g. command: ["log"] or enable TLS with cert/key files mounted below.
+    command: ["log"]
+    # For TLS, mount certificate and key and uncomment:
+    # volumes:
+    #   - ./certs:/certs:ro
+    # command: ["log", "--tls", "--tls_cert", "/certs/cert.pem", "--tls_key", "/certs/key.pem"]

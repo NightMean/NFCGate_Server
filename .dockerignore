@@ -1,0 +1,11 @@
+.git
+.gitmodules
+.idea
+__pycache__
+*.pyc
+Dockerfile
+docker-compose.yml
+.dockerignore
+README.md
+LICENSE
+make_proto.sh
